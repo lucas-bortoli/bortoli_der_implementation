@@ -11,6 +11,12 @@ use crate::{
 pub mod bit;
 pub mod tables;
 
+#[derive(PartialEq)]
+pub enum DESMode {
+    Cipher,
+    Decipher,
+}
+
 struct DesAlgo {}
 
 impl DesAlgo {
@@ -142,13 +148,13 @@ impl DesAlgo {
         exp_re_xor
     }
 
-    fn cipher(input_plain: u64, input_key: u64) -> u64 {
-        let input_plain_bits = input_plain.to_bit_vec();
-        println!("inpplain    : {:?}", input_plain_bits);
+    fn process(input: u64, key: u64, mode: DESMode) -> u64 {
+        let input_bits = input.to_bit_vec();
+        println!("inpplain    : {:?}", input_bits);
 
         let mut input_permuted: Vec<Bit> = vec![];
         for idx in INITIAL_PERMUTATION_TABLE {
-            let swapped_bit = input_plain_bits.get((idx - 1) as usize).unwrap();
+            let swapped_bit = input_bits.get((idx - 1) as usize).unwrap();
             input_permuted.push(*swapped_bit);
         }
 
@@ -157,12 +163,16 @@ impl DesAlgo {
         let mut left: Vec<Bit> = input_permuted[0..32].into();
         let mut right: Vec<Bit> = input_permuted[32..64].into();
 
-        for round_no in 1..17 {
+        for mut round_no in 1..17 {
+            if mode == DESMode::Decipher {
+                round_no = 17 - round_no;
+            }
+
             println!("round {}", round_no);
             println!("left         : {:?}", left);
             println!("right        : {:?}", right);
 
-            let subkey = DesAlgo::make_subkey(input_key, round_no);
+            let subkey = DesAlgo::make_subkey(key, round_no);
 
             let re_expanded = DesAlgo::bit_expansion(&right, &subkey);
             let f_output = DesAlgo::permute_re(&re_expanded);
@@ -195,15 +205,6 @@ impl DesAlgo {
         println!("final: {:?}", final_reshuffle);
 
         final_reshuffle.to_u64()
-    }
-
-    fn decipher(input_cipher: u64, input_key: u64) -> u64 {
-        let input_cipher_bits = input_cipher.to_bit_vec();
-        println!("inpcipher    : {:?}", input_cipher_bits);
-
-        // TODO
-
-        return 0;
     }
 }
 
@@ -311,7 +312,16 @@ mod tests {
 
     #[test]
     fn cipher() {
-        let ciphered = DesAlgo::cipher(0x0123456789ABCDEF, 0x0123456789ABCDEF);
+        let ciphered = DesAlgo::process(0x0123456789ABCDEF, 0x0123456789ABCDEF, DESMode::Cipher);
         println!("ciphered: {:X}", ciphered);
+        assert_eq!(ciphered, 0x56CC09E7CFDC4CEFu64);
+    }
+
+    #[test]
+    fn decipher() {
+        let deciphered: u64 =
+            DesAlgo::process(0x56CC09E7CFDC4CEFu64, 0x0123456789ABCDEF, DESMode::Decipher);
+        println!("deciphered: {:X}", deciphered);
+        assert_eq!(deciphered, 0x0123456789ABCDEF);
     }
 }
