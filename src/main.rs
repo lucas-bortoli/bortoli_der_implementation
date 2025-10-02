@@ -1,8 +1,11 @@
 use std::{collections::VecDeque, vec};
 
 use crate::{
-    bit::{Bit, ShiftLeft, StringBit, ToBitVec, Xor},
-    tables::{INITIAL_PERMUTATION_TABLE, KEY_SHIFT, PC1, PC2, RE_EXPANSION_TABLE},
+    bit::{Bit, Bitwise, ShiftLeft, StringBit, ToBitVec, ToInteger},
+    tables::{
+        FINAL_PERMUTATION_TABLE, INITIAL_PERMUTATION_TABLE, KEY_SHIFT, P_TABLE, PC1, PC2,
+        RE_EXPANSION_TABLE, SBOX_TABLE,
+    },
 };
 
 pub mod bit;
@@ -66,10 +69,62 @@ impl DesAlgo {
         subkey
     }
 
+    // vai diminuir o input  de 48 bits para 32 bits
+    fn permute_re(input: &Vec<Bit>) -> Vec<Bit> {
+        assert_eq!(input.len(), 48, "input não tem 48 bits");
+
+        let mut sboxed: Vec<Bit> = vec![];
+
+        for i in 0..8 {
+            let start = i * 6;
+            let end = start + 6;
+            let group: Vec<Bit> = input[start..end].into();
+
+            assert_eq!(group.len(), 6, "group não tem 6 bits");
+
+            println!("group_{}      : {:?}", i + 1, group.bits());
+
+            let group_number = group.to_u8();
+            let row_no = ((group_number & 0b100000) >> 4) | (group_number & 0b1);
+            let col_no = (group_number & 0b011110) >> 1;
+
+            let sbox_val = SBOX_TABLE[i][row_no as usize][col_no as usize];
+            let mut sbox_val_bits = sbox_val.to_bit_vec();
+
+            println!(
+                "sbox[{}][{}][{}]: {} ({:?})",
+                i,
+                row_no,
+                col_no,
+                sbox_val,
+                sbox_val_bits.bits()
+            );
+
+            // como convertemos um u8 para Vec<Bit>, o Vec<Bit> tem 8 itens, mas sbox_val só retornaria 4 bits na realidade
+            // então vamos descartar os 4 zeros iniciais
+            for bit in &sbox_val_bits[4..8] {
+                sboxed.push(*bit);
+            }
+        }
+
+        println!("sboxed       : {:?}", sboxed);
+
+        // permutacao do sboxed sobre ptable
+        let mut permuted: Vec<Bit> = vec![];
+        for pvalue in P_TABLE.iter() {
+            let swapped_bit = sboxed.get((pvalue - 1) as usize).unwrap();
+            permuted.push(*swapped_bit);
+        }
+
+        println!("permuted     : {:?}", permuted);
+
+        permuted
+    }
+
     fn bit_expansion(
         re: &Vec<Bit>,     /* 32 bits */
         subkey: &Vec<Bit>, /* 48 bits na subkey */
-    ) {
+    ) -> Vec<Bit> {
         assert_eq!(re.len(), 32, "re não tem 32 bits");
         assert_eq!(subkey.len(), 48, "subkey não tem 48 bits");
 
@@ -79,11 +134,15 @@ impl DesAlgo {
             expanded_re.push(*swapped_bit);
         }
 
+        let exp_re_xor = expanded_re.xor(subkey);
+
         println!("expanded_re  : {:?}", expanded_re);
-        println!("exp_re_xor   : {:?}", expanded_re.xor(subkey));
+        println!("exp_re_xor   : {:?}", exp_re_xor);
+
+        exp_re_xor
     }
 
-    fn exec_round(input_plain: u64, subkey: Vec<Bit>) {
+    fn cipher(input_plain: u64, input_key: u64) -> u64 {
         let input_plain_bits = input_plain.to_bit_vec();
         println!("inpplain    : {:?}", input_plain_bits);
 
@@ -98,10 +157,53 @@ impl DesAlgo {
         let mut left: Vec<Bit> = input_permuted[0..32].into();
         let mut right: Vec<Bit> = input_permuted[32..64].into();
 
-        println!("left         : {:?}", left);
-        println!("right        : {:?}", right);
+        for round_no in 1..17 {
+            println!("round {}", round_no);
+            println!("left         : {:?}", left);
+            println!("right        : {:?}", right);
 
-        DesAlgo::bit_expansion(&right, &subkey);
+            let subkey = DesAlgo::make_subkey(input_key, round_no);
+
+            let re_expanded = DesAlgo::bit_expansion(&right, &subkey);
+            let f_output = DesAlgo::permute_re(&re_expanded);
+
+            let next_le = right.clone();
+            let next_re = f_output.xor(&left);
+
+            println!("next_le      : {:?}", next_le.bits());
+            println!("next_re      : {:?}", next_re.bits());
+
+            left = next_le;
+            right = next_re;
+        }
+
+        // rounds feitas, vamos concatenar novamente
+        let mut concated: Vec<Bit> = vec![];
+        for bit in right {
+            concated.push(bit);
+        }
+        for bit in left {
+            concated.push(bit);
+        }
+
+        let mut final_reshuffle: Vec<Bit> = vec![];
+        for idx in FINAL_PERMUTATION_TABLE {
+            let swapped_bit = concated.get((idx - 1) as usize).unwrap();
+            final_reshuffle.push(*swapped_bit);
+        }
+
+        println!("final: {:?}", final_reshuffle);
+
+        final_reshuffle.to_u64()
+    }
+
+    fn decipher(input_cipher: u64, input_key: u64) -> u64 {
+        let input_cipher_bits = input_cipher.to_bit_vec();
+        println!("inpcipher    : {:?}", input_cipher_bits);
+
+        // TODO
+
+        return 0;
     }
 }
 
@@ -127,7 +229,8 @@ mod tests {
     #[test]
     fn util_u64_to_bits() {
         assert_eq!(
-            0b10000000_00000000_00000000_00000000_00000000_00000000_10000000_00001111.to_bit_vec(),
+            0b10000000_00000000_00000000_00000000_00000000_00000000_10000000_00001111u64
+                .to_bit_vec(),
             explode_bitstring(
                 "10000000 00000000 00000000 00000000 00000000 00000000 10000000 00001111"
             )
@@ -207,10 +310,8 @@ mod tests {
     }
 
     #[test]
-    fn round() {
-        DesAlgo::exec_round(
-            0x0123456789ABCDEF,
-            DesAlgo::make_subkey(0x0123456789ABCDEF, 1),
-        );
+    fn cipher() {
+        let ciphered = DesAlgo::cipher(0x0123456789ABCDEF, 0x0123456789ABCDEF);
+        println!("ciphered: {:X}", ciphered);
     }
 }

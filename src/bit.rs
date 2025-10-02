@@ -36,11 +36,25 @@ impl StringBit for VecDeque<Bit> {
     }
 }
 
-pub trait ToU64 {
+pub trait ToInteger {
+    fn to_u8(&self) -> u8;
     fn to_u64(&self) -> u64;
 }
 
-impl ToU64 for Vec<Bit> {
+impl ToInteger for Vec<Bit> {
+    fn to_u8(&self) -> u8 {
+        let mut reversed = Vec::from(self.clone());
+        reversed.reverse();
+
+        let mut n = 0u8;
+        for (i, bit) in reversed.iter().enumerate() {
+            let p = 2_u8.pow(i as u32) * (*bit as u8);
+            n += p;
+        }
+
+        n
+    }
+
     fn to_u64(&self) -> u64 {
         let mut reversed = Vec::from(self.clone());
         reversed.reverse();
@@ -57,6 +71,24 @@ impl ToU64 for Vec<Bit> {
 
 pub trait ToBitVec {
     fn to_bit_vec(&self) -> Vec<Bit>;
+}
+
+impl ToBitVec for u8 {
+    fn to_bit_vec(&self) -> Vec<Bit> {
+        let mut bits: Vec<Bit> = vec![];
+
+        for i in 0..8 {
+            if (self >> i) & 0b1 > 0 {
+                bits.push(1);
+            } else {
+                bits.push(0);
+            }
+        }
+
+        bits.reverse();
+
+        bits
+    }
 }
 
 impl ToBitVec for u64 {
@@ -95,12 +127,13 @@ impl ShiftLeft for VecDeque<Bit> {
     }
 }
 
-pub trait Xor {
-    fn xor(&mut self, rhs: &Vec<Bit>) -> Vec<Bit>;
+pub trait Bitwise {
+    fn xor(&self, rhs: &Vec<Bit>) -> Vec<Bit>;
+    fn and(&self, rhs: &Vec<Bit>) -> Vec<Bit>;
 }
 
-impl Xor for Vec<Bit> {
-    fn xor(&mut self, rhs: &Vec<Bit>) -> Vec<Bit> {
+impl Bitwise for Vec<Bit> {
+    fn xor(&self, rhs: &Vec<Bit>) -> Vec<Bit> {
         assert_eq!(
             self.len(),
             rhs.len(),
@@ -112,9 +145,27 @@ impl Xor for Vec<Bit> {
             let a = self[i];
             let b = rhs[i];
 
-            xored.push((a + b) & 0b1); // tome o xor seu filho da puta
+            xored.push((a + b) & 0b1); // tome o xor seu fdp
         }
 
         xored
+    }
+
+    fn and(&self, rhs: &Vec<Bit>) -> Vec<Bit> {
+        assert_eq!(
+            self.len(),
+            rhs.len(),
+            "and entre Vec<Bit> de tamanhos distintos"
+        );
+
+        let mut anded: Vec<Bit> = vec![];
+        for i in 0..self.len() {
+            let a = self[i];
+            let b = rhs[i];
+
+            anded.push(a & b);
+        }
+
+        anded
     }
 }
